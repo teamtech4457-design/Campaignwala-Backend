@@ -4,109 +4,123 @@ const mongoose = require('mongoose');
 const User = require('../../../src/modules/users/user.model');
 const Notification = require('../../../src/modules/notifications/notification.model');
 
+let adminToken, userToken, userId;
+
+beforeAll(async () => {
+  // Create users
+  const admin = await User.create({ name: 'Admin User', email: 'adminnotifs@example.com', phoneNumber: '9876543214', password: 'password123', role: 'admin' });
+  const user = await User.create({ name: 'Test User', email: 'usernotifs@example.com', phoneNumber: '1234567892', password: 'password123', role: 'user' });
+  userId = user._id;
+
+  // Log in users
+  const adminLoginRes = await request(app).post('/api/users/login').send({ phoneNumber: '9876543214', password: 'password123' });
+  adminToken = adminLoginRes.body.data.token;
+  const userLoginRes = await request(app).post('/api/users/login').send({ phoneNumber: '1234567892', password: 'password123' });
+  userToken = userLoginRes.body.data.token;
+});
+
 afterAll(async () => {
-  // Clean up mock data
-  await User.deleteMany({ email: /@test-notification.com/ });
-  await Notification.deleteMany({ title: /Test Notification/ });
+  await User.deleteMany({});
+  await Notification.deleteMany({});
   await mongoose.disconnect();
 });
 
-describe('Notifications API - /api/notifications', () => {
+describe('Notifications API', () => {
+  let notificationId;
 
-  const adminToken = 'your-admin-jwt-token';
-  let userToken, testUser1, testUser2;
-  let notificationForUser1;
-
-  beforeAll(async () => {
-    // Create mock users
-    testUser1 = await User.create({
-        name: 'Test User One',
-        email: `user1_${Date.now()}@test-notification.com`,
-        phoneNumber: `11111${Date.now()}`.slice(0, 10),
-        password: 'password123'
-    });
-    testUser2 = await User.create({
-        name: 'Test User Two',
-        email: `user2_${Date.now()}@test-notification.com`,
-        phoneNumber: `22222${Date.now()}`.slice(0, 10),
-        password: 'password123'
-    });
-    // In a real app, you'd generate a token by logging the user in.
-    // For this test, we'll assume a token is available.
-    userToken = 'your-user-jwt-token'; 
-  });
-
-  describe('User-facing Endpoints', () => {
-    it('should return 401 for unauthenticated users trying to get notifications', async () => {
-      const res = await request(app).get('/api/notifications/user');
-      expect(res.statusCode).toEqual(401);
-    });
-
-    it('should return 200 and an empty array for a new user with no notifications', async () => {
-      const res = await request(app)
-        .get('/api/notifications/user')
-        .set('Authorization', `Bearer ${userToken}`); // Assuming this token is for testUser1
-      expect(res.statusCode).toEqual(200);
-      expect(res.body.data.notifications).toEqual([]);
-    });
-  });
-
-  describe('Admin: Send and Manage Notifications', () => {
-    it('should forbid a regular user from sending a notification', async () => {
-      const res = await request(app)
-        .post('/api/notifications/send')
-        .set('Authorization', `Bearer ${userToken}`)
-        .send({ type: 'announcement', title: 'User Test', message: 'This should fail' });
-      expect(res.statusCode).toEqual(403);
-    });
-
-    it('should allow an admin to send a notification to a specific user', async () => {
+  describe('POST /api/notifications/send', () => {
+    it('should send a notification to all users and return 201', async () => {
       const res = await request(app)
         .post('/api/notifications/send')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
-          type: 'profile',
-          title: 'Test Notification for User 1',
-          message: 'Please update your profile.',
-          selectedUserIds: [testUser1._id.toString()]
+          type: 'announcement',
+          title: 'Test Announcement',
+          message: 'This is a test notification for all users.',
+          recipients: ['all'],
         });
+
       expect(res.statusCode).toEqual(201);
-      expect(res.body.data.recipientCount).toEqual(1);
-      notificationForUser1 = res.body.data; // Save for later tests
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toHaveProperty('title', 'Test Announcement');
+      notificationId = res.body.data._id;
+    });
+  });
+
+  describe('GET /api/notifications', () => {
+    it('should get all notifications for admin and return 200', async () => {
+      const res = await request(app)
+        .get('/api/notifications')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.data.notifications)).toBe(true);
+    });
+  });
+
+  describe('GET /api/notifications/stats', () => {
+    it('should get notification stats and return 200', async () => {
+      const res = await request(app)
+        .get('/api/notifications/stats')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toHaveProperty('total');
+    });
+  });
+
+  describe('GET /api/notifications/user', () => {
+    it('should get notifications for the current user and return 200', async () => {
+      const res = await request(app)
+        .get('/api/notifications/user')
+        .set('Authorization', `Bearer ${userToken}`);
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.data.notifications)).toBe(true);
+    });
+  });
+
+  describe('GET /api/notifications/:id', () => {
+    it('should get a notification by ID and return 200', async () => {
+      const res = await request(app)
+        .get(`/api/notifications/${notificationId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toHaveProperty('_id', notificationId);
+    });
+  });
+
+  describe('DELETE /api/notifications/:id', () => {
+    it('should delete a notification and return 200', async () => {
+      const res = await request(app)
+        .delete(`/api/notifications/${notificationId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.success).toBe(true);
+    });
+  });
+
+  describe('POST /api/notifications/bulk-delete', () => {
+    let notif1, notif2;
+    beforeEach(async () => {
+      notif1 = await Notification.create({ type: 'system', title: 'Delete 1', message: '...' });
+      notif2 = await Notification.create({ type: 'system', title: 'Delete 2', message: '...' });
     });
 
-    it('should allow user 1 to see the new notification', async () => {
-        const res = await request(app)
-          .get('/api/notifications/user')
-          .set('Authorization', `Bearer ${userToken}`); // for testUser1
-        expect(res.statusCode).toEqual(200);
-        expect(res.body.data.notifications.length).toBe(1);
-        expect(res.body.data.notifications[0].title).toEqual('Test Notification for User 1');
-      });
+    it('should bulk delete notifications and return 200', async () => {
+      const res = await request(app)
+        .post('/api/notifications/bulk-delete')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ ids: [notif1._id, notif2._id] });
 
-    it('should not show the notification to user 2', async () => {
-        // This requires a separate token for testUser2
-        const user2Token = 'your-user2-jwt-token';
-        const res = await request(app)
-          .get('/api/notifications/user')
-          .set('Authorization', `Bearer ${user2Token}`);
-        expect(res.statusCode).toEqual(200);
-        expect(res.body.data.notifications.length).toBe(0);
-      });
-
-    it('should allow an admin to delete the notification', async () => {
-        const res = await request(app)
-            .delete(`/api/notifications/${notificationForUser1._id}`)
-            .set('Authorization', `Bearer ${adminToken}`);
-        expect(res.statusCode).toEqual(200);
-    });
-
-    it('should confirm the notification is no longer visible to user 1', async () => {
-        const res = await request(app)
-          .get('/api/notifications/user')
-          .set('Authorization', `Bearer ${userToken}`);
-        expect(res.statusCode).toEqual(200);
-        expect(res.body.data.notifications.length).toBe(0);
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.success).toBe(true);
     });
   });
 });

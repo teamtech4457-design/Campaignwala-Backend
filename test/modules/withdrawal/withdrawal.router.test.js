@@ -5,7 +5,7 @@ const User = require('../../../src/modules/users/user.model');
 const Wallet = require('../../../src/modules/wallet/wallet.model');
 const Withdrawal = require('../../../src/modules/withdrawal/withdrawal.model');
 
-let adminToken, userToken, userId;
+let adminToken, userToken, userId, adminId;
 
 beforeAll(async () => {
   // Create a user and an admin user for testing
@@ -25,6 +25,7 @@ beforeAll(async () => {
     password: 'password123',
     role: 'admin',
   });
+  adminId = admin._id
 
   // Login as admin to get token
   const adminLoginRes = await request(app)
@@ -84,15 +85,51 @@ describe('Withdrawal API', () => {
     });
   });
 
-  describe('GET /api/withdrawals/admin/all', () => {
+  describe('GET /api/withdrawals', () => {
     it('should get all withdrawal requests for admin and return 200', async () => {
       const res = await request(app)
-        .get('/api/withdrawals/admin/all')
+        .get('/api/withdrawals')
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.statusCode).toEqual(200);
       expect(res.body.success).toBe(true);
       expect(Array.isArray(res.body.data.withdrawals)).toBe(true);
+    });
+  });
+
+  describe('GET /api/withdrawals/stats', () => {
+    it('should get withdrawal stats and return 200', async () => {
+      const res = await request(app)
+        .get('/api/withdrawals/stats')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toHaveProperty('total');
+    });
+  });
+
+  describe('GET /api/withdrawals/user/:userId', () => {
+    it('should get withdrawals by user ID and return 200', async () => {
+      const res = await request(app)
+        .get(`/api/withdrawals/user/${userId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.data.withdrawals)).toBe(true);
+    });
+  });
+
+  describe('GET /api/withdrawals/:id', () => {
+    it('should get a withdrawal by ID and return 200', async () => {
+      const res = await request(app)
+        .get(`/api/withdrawals/${withdrawalRequestId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toHaveProperty('_id', withdrawalRequestId);
     });
   });
 
@@ -102,7 +139,7 @@ describe('Withdrawal API', () => {
         .put(`/api/withdrawals/${withdrawalRequestId}/approve`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
-          adminId: mongoose.Types.ObjectId(),
+          adminId: adminId,
           transactionId: 'txn_12345',
           remarks: 'Approved for testing',
         });
@@ -115,7 +152,7 @@ describe('Withdrawal API', () => {
 
   describe('PUT /api/withdrawals/:id/reject', () => {
     let pendingWithdrawalId;
-    beforeAll(async () => {
+    beforeEach(async () => {
         const withdrawal = await Withdrawal.create({ userId, amount: 20, status: 'pending' });
         pendingWithdrawalId = withdrawal._id;
     });
@@ -125,13 +162,29 @@ describe('Withdrawal API', () => {
         .put(`/api/withdrawals/${pendingWithdrawalId}/reject`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
-          adminId: mongoose.Types.ObjectId(),
+          adminId: adminId,
           rejectionReason: 'Testing rejection',
         });
 
       expect(res.statusCode).toEqual(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data).toHaveProperty('status', 'rejected');
+    });
+  });
+
+  describe('DELETE /api/withdrawals/:id', () => {
+    let withdrawalToDelete;
+    beforeEach(async () => {
+      withdrawalToDelete = await Withdrawal.create({ userId, amount: 10, status: 'pending' });
+    });
+
+    it('should delete a withdrawal request and return 200', async () => {
+      const res = await request(app)
+        .delete(`/api/withdrawals/${withdrawalToDelete._id}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.success).toBe(true);
     });
   });
 });

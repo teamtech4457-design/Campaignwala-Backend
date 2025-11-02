@@ -7,7 +7,7 @@
 
 ### 1. Create Withdrawal Request (`POST /`)
 
-- [ ] **Authenticated User, Sufficient Balance:** As a logged-in user with enough balance, create a withdrawal request with a valid `amount`.
+- [ ] **Authenticated User, Sufficient Balance:** As a logged-in user with enough balance, create a withdrawal request with a valid `amount` and `bankDetails`.
   - **Expected:** Receive a `201 Created` with the new withdrawal request object, status set to 'pending'.
 - [ ] **Insufficient Balance:** Attempt to withdraw an amount greater than the available wallet balance.
   - **Expected:** Receive a `400 Bad Request` with an "Insufficient balance" message.
@@ -15,10 +15,10 @@
   - **Expected:** Receive a `400 Bad Request`.
 - [ ] **Unauthenticated User:** Attempt to create a request without being logged in.
   - **Expected:** Receive a `401 Unauthorized`.
-- [ ] **Missing Fields:** Send a request without the `amount`.
+- [ ] **Missing Fields:** Send a request without the `amount` or `userId`.
   - **Expected:** Receive a `400 Bad Request`.
 
-### 2. Get All Withdrawal Requests (`GET /admin/all`)
+### 2. Get All Withdrawal Requests (`GET /`)
 
 - [ ] **Admin Access:** As an admin, make a GET request.
   - **Expected:** Receive a `200 OK` with a paginated list of all withdrawal requests.
@@ -29,14 +29,12 @@
 - [ ] **Pagination and Sorting:** Test the `page`, `limit`, `sortBy`, and `order` query parameters.
   - **Expected:** The response should be correctly paginated and sorted.
 
-### 3. Get Withdrawal by ID (`GET /:id`)
+### 3. Get Withdrawal Statistics (`GET /stats`)
 
-- [ ] **Admin/Owner Access:** As an admin or the user who made the request, fetch a withdrawal by its ID.
-  - **Expected:** Receive a `200 OK` with the withdrawal details.
-- [ ] **Unauthorized Access:** As a regular user, attempt to fetch a withdrawal request made by another user.
-  - **Expected:** Receive a `403 Forbidden` or `404 Not Found` depending on the authorization logic.
-- [ ] **Invalid ID:** Use a non-existent withdrawal ID.
-  - **Expected:** Receive a `404 Not Found`.
+- [ ] **Admin Access:** As an admin, make a GET request to this endpoint.
+  - **Expected:** Receive a `200 OK` with statistics like total requests, pending, approved, rejected counts, and total amounts.
+- [ ] **Non-Admin Access:** As a regular user, attempt to access this endpoint.
+  - **Expected:** Receive a `403 Forbidden`.
 
 ### 4. Get Withdrawals by User ID (`GET /user/:userId`)
 
@@ -47,7 +45,16 @@
 - [ ] **Unauthorized Access:** As a regular user, attempt to get the history for another user.
   - **Expected:** Receive a `403 Forbidden`.
 
-### 5. Approve Withdrawal Request (`PUT /:id/approve`)
+### 5. Get Withdrawal by ID (`GET /:id`)
+
+- [ ] **Admin/Owner Access:** As an admin or the user who made the request, fetch a withdrawal by its ID.
+  - **Expected:** Receive a `200 OK` with the withdrawal details.
+- [ ] **Unauthorized Access:** As a regular user, attempt to fetch a withdrawal request made by another user.
+  - **Expected:** Receive a `403 Forbidden` or `404 Not Found` depending on the authorization logic.
+- [ ] **Invalid ID:** Use a non-existent withdrawal ID.
+  - **Expected:** Receive a `404 Not Found`.
+
+### 6. Approve Withdrawal Request (`PUT /:id/approve`)
 
 - [ ] **Admin Access, Pending Request:** As an admin, approve a 'pending' withdrawal request. Provide `transactionId` and `remarks`.
   - **Expected:** Receive a `200 OK`. The withdrawal status changes to 'approved'. The corresponding amount is debited from the user's wallet.
@@ -58,7 +65,7 @@
 - [ ] **Non-Admin Access:** As a regular user, attempt to approve a request.
   - **Expected:** Receive a `403 Forbidden`.
 
-### 6. Reject Withdrawal Request (`PUT /:id/reject`)
+### 7. Reject Withdrawal Request (`PUT /:id/reject`)
 
 - [ ] **Admin Access, Pending Request:** As an admin, reject a 'pending' request with a valid `rejectionReason`.
   - **Expected:** Receive a `200 OK`. The withdrawal status changes to 'rejected'. The user's wallet balance is NOT debited.
@@ -67,9 +74,11 @@
 - [ ] **Non-Admin Access:** As a regular user, attempt to reject a request.
   - **Expected:** Receive a `403 Forbidden`.
 
-### 7. Get Withdrawal Statistics (`GET /stats`)
+### 8. Delete Withdrawal Request (`DELETE /:id`)
 
-- [ ] **Admin Access:** As an admin, make a GET request to this endpoint.
-  - **Expected:** Receive a `200 OK` with statistics like total requests, pending, approved, rejected counts, and total amounts.
-- [ ] **Non-Admin Access:** As a regular user, attempt to access this endpoint.
+- [ ] **Admin Access, Valid ID:** As an admin, delete a withdrawal request by its ID.
+  - **Expected:** Receive a `200 OK` with a success message.
+- [ ] **Invalid ID:** Attempt to delete a request with a non-existent ID.
+  - **Expected:** Receive a `404 Not Found`.
+- [ ] **Non-Admin Access:** As a regular user, attempt to delete a request.
   - **Expected:** Receive a `403 Forbidden`.

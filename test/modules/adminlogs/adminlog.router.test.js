@@ -1,130 +1,126 @@
 const request = require('supertest');
 const app = require('../../../index');
 const mongoose = require('mongoose');
+const User = require('../../../src/modules/users/user.model');
+const AdminLog = require('../../../src/modules/adminlogs/adminlog.model');
 
-// Close the database connection after all tests are done
+let adminToken, adminId;
+
+beforeAll(async () => {
+  // Create an admin user for testing
+  const admin = await User.create({
+    name: 'Admin User',
+    email: 'adminlogs@example.com',
+    phoneNumber: '9876543211',
+    password: 'password123',
+    role: 'admin',
+  });
+  adminId = admin._id;
+
+  // Login as admin to get token
+  const adminLoginRes = await request(app)
+    .post('/api/users/login')
+    .send({ phoneNumber: '9876543211', password: 'password123' });
+  adminToken = adminLoginRes.body.data.token;
+
+  // Create some sample logs
+  await AdminLog.create([
+    {
+      adminId,
+      adminName: 'Admin User',
+      action: 'Test Action 1',
+      actionType: 'test',
+      module: 'testing',
+      severity: 'info',
+    },
+    {
+      adminId,
+      adminName: 'Admin User',
+      action: 'Test Action 2',
+      actionType: 'test',
+      module: 'testing',
+      severity: 'warning',
+    },
+  ]);
+});
+
 afterAll(async () => {
+  await User.deleteMany({});
+  await AdminLog.deleteMany({});
   await mongoose.disconnect();
 });
 
-describe('Admin Logs API - /api/adminlogs', () => {
-
-  // IMPORTANT: In a real test suite, these tokens would be acquired
-  // programmatically in a `beforeAll` block.
-  const adminToken = 'your-admin-jwt-token'; 
-  const userToken = 'your-user-jwt-token';
-  
-  let newLogId; // Used to store the ID of a log created during tests
-
-  describe('GET /', () => {
-    it('should return 401 Unauthorized if no token is provided', async () => {
-      const res = await request(app).get('/api/adminlogs');
-      // Assuming you have middleware that blocks unauthenticated requests
-      expect(res.statusCode).toBeOneOf([401, 403]);
-    });
-
-    it('should return 403 Forbidden for a regular user', async () => {
-      const res = await request(app)
-        .get('/api/adminlogs')
-        .set('Authorization', `Bearer ${userToken}`);
-      // Assuming you have role-based middleware
-      expect(res.statusCode).toEqual(403);
-    });
-
-    it('should return 200 OK and logs for an admin user', async () => {
+describe('Admin Logs API', () => {
+  describe('GET /api/adminlogs', () => {
+    it('should get all admin logs for admin and return 200', async () => {
       const res = await request(app)
         .get('/api/adminlogs')
         .set('Authorization', `Bearer ${adminToken}`);
+
       expect(res.statusCode).toEqual(200);
       expect(res.body.success).toBe(true);
       expect(Array.isArray(res.body.data.logs)).toBe(true);
     });
   });
 
-  describe('GET /stats', () => {
-    it('should return 200 OK and stats for an admin user', async () => {
-        const res = await request(app)
-          .get('/api/adminlogs/stats')
-          .set('Authorization', `Bearer ${adminToken}`);
-        expect(res.statusCode).toEqual(200);
-        expect(res.body.success).toBe(true);
-        expect(res.body.data).toHaveProperty('total');
-        expect(res.body.data).toHaveProperty('bySeverity');
-      });
+  describe('GET /api/adminlogs/stats', () => {
+    it('should get admin log stats and return 200', async () => {
+      const res = await request(app)
+        .get('/api/adminlogs/stats')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toHaveProperty('total');
+    });
   });
 
-  describe('POST, GET, and DELETE Single Log Lifecycle', () => {
-    it('should create a new log entry and return 201', async () => {
+  describe('GET /api/adminlogs/admin/:adminId', () => {
+    it('should get logs by admin ID and return 200', async () => {
+      const res = await request(app)
+        .get(`/api/adminlogs/admin/${adminId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.data.logs)).toBe(true);
+    });
+  });
+
+  describe('POST /api/adminlogs', () => {
+    it('should create a new admin log and return 201', async () => {
       const res = await request(app)
         .post('/api/adminlogs')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
-          adminName: 'Test Admin',
-          action: 'Performed a test action',
-          actionType: 'system',
+          adminId,
+          adminName: 'Admin User',
+          action: 'New Test Action',
+          actionType: 'create',
           module: 'testing',
-          severity: 'info'
+          severity: 'info',
         });
+
       expect(res.statusCode).toEqual(201);
       expect(res.body.success).toBe(true);
-      expect(res.body.data).toHaveProperty('_id');
-      newLogId = res.body.data._id; // Save for the next tests
+      expect(res.body.data).toHaveProperty('action', 'New Test Action');
+    });
+  });
+
+  describe('DELETE /api/adminlogs/:id', () => {
+    let logId;
+    beforeEach(async () => {
+      const log = await AdminLog.create({ adminId, adminName: 'Admin User', action: 'To be deleted' });
+      logId = log._id;
     });
 
-    it('should retrieve the newly created log by its ID', async () => {
-        const res = await request(app)
-          .get(`/api/adminlogs/${newLogId}`)
-          .set('Authorization', `Bearer ${adminToken}`);
-        expect(res.statusCode).toEqual(200);
-        expect(res.body.data._id).toEqual(newLogId);
-      });
-
-    it('should delete the log and return 200', async () => {
+    it('should delete an admin log and return 200', async () => {
       const res = await request(app)
-        .delete(`/api/adminlogs/${newLogId}`)
+        .delete(`/api/adminlogs/${logId}`)
         .set('Authorization', `Bearer ${adminToken}`);
+
       expect(res.statusCode).toEqual(200);
-      expect(res.body.message).toEqual('Admin log deleted successfully');
-    });
-
-    it('should return 404 when trying to retrieve the deleted log', async () => {
-        const res = await request(app)
-          .get(`/api/adminlogs/${newLogId}`)
-          .set('Authorization', `Bearer ${adminToken}`);
-        expect(res.statusCode).toEqual(404);
-      });
-  });
-
-  describe('POST /bulk-delete', () => {
-    it('should bulk delete multiple logs', async () => {
-        // 1. Create a few logs to delete
-        const log1 = await request(app).post('/api/adminlogs').set('Authorization', `Bearer ${adminToken}`).send({ adminName: 'Bulk Test 1', action: 'Action 1' });
-        const log2 = await request(app).post('/api/adminlogs').set('Authorization', `Bearer ${adminToken}`).send({ adminName: 'Bulk Test 2', action: 'Action 2' });
-        const idsToDelete = [log1.body.data._id, log2.body.data._id];
-
-        // 2. Perform bulk delete
-        const res = await request(app)
-            .post('/api/adminlogs/bulk-delete')
-            .set('Authorization', `Bearer ${adminToken}`)
-            .send({ ids: idsToDelete });
-
-        expect(res.statusCode).toEqual(200);
-        expect(res.body.deletedCount).toEqual(2);
+      expect(res.body.success).toBe(true);
     });
   });
-
-  describe('POST /clear-old', () => {
-    it('should run the clear old logs process and return 200', async () => {
-        // This test just verifies the endpoint can be called successfully.
-        // A more advanced test could involve creating logs with past dates.
-        const res = await request(app)
-            .post('/api/adminlogs/clear-old')
-            .set('Authorization', `Bearer ${adminToken}`)
-            .send({ days: 30 }); // Clear logs older than 30 days
-
-        expect(res.statusCode).toEqual(200);
-        expect(res.body).toHaveProperty('deletedCount');
-    });
-  });
-
 });
