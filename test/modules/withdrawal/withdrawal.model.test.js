@@ -2,15 +2,6 @@ const mongoose = require('mongoose');
 const Withdrawal = require('../../../src/modules/withdrawal/withdrawal.model');
 
 describe('Withdrawal Model', () => {
-  beforeAll(async () => {
-    await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost/testdb', { useNewUrlParser: true, useUnifiedTopology: true });
-  });
-
-  afterAll(async () => {
-    await mongoose.connection.db.dropDatabase();
-    await mongoose.disconnect();
-  });
-
   afterEach(async () => {
     await Withdrawal.deleteMany({});
   });
