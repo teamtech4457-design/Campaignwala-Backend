@@ -6,7 +6,11 @@
   "scripts": {
     "start": "nodemon index.js",
     "dev": "nodemon index.js",
-    "test": "jest"
+    "test": "jest",
+  "jest": {
+    "globalSetup": "./test-setup.js",
+    "globalTeardown": "./test-teardown.js"
+  }
   },
   "repository": {
     "type": "git",
@@ -32,6 +36,7 @@
   },
   "devDependencies": {
     "jest": "^30.2.0",
+    "mongodb-memory-server": "^10.3.0",
     "nodemon": "^3.1.10",
     "supertest": "^7.1.4"
   }

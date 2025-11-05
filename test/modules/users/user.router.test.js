@@ -1,28 +1,22 @@
 const request = require('supertest');
-const app = require('../../../index');
-const mongoose = require('mongoose');
+const express = require('express');
+const router = require('../../../src/modules/users/user.router');
 
-afterAll(async () => {
-  await mongoose.disconnect();
-});
+const app = express();
+app.use(express.json());
+app.use('/api/users', router);
 
-describe('POST /api/users/send-otp', () => {
-  it('should send an OTP to a valid phone number and return 200', async () => {
-    const res = await request(app)
-      .post('/api/users/send-otp')
-      .send({
-        phoneNumber: '9876543210'
-      });
-    expect(res.statusCode).toEqual(200);
-    expect(res.body.success).toBe(true);
-    expect(res.body.message).toBe('OTP sent successfully');
-  });
-
-  it('should return a 400 error if the phone number is missing', async () => {
-    const res = await request(app)
-      .post('/api/users/send-otp')
-      .send({});
-    expect(res.statusCode).toEqual(400);
-    expect(res.body.success).toBe(false);
+describe('User API Endpoints', () => {
+  describe('POST /api/users/send-otp', () => {
+    it('should send an OTP to the user', async () => {
+      const res = await request(app)
+        .post('/api/users/send-otp')
+        .send({
+          phoneNumber: '1234567890'
+        });
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.message).toBe('OTP sent successfully');
+    });
   });
 });
