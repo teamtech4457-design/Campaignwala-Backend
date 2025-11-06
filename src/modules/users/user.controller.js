@@ -295,19 +295,8 @@ const login = async (req, res) => {
 
         // If OTP is provided, verify it and complete login
         if (otp) {
-            console.log('🔐 Verifying OTP for login...');
-            console.log('   User OTP from DB:', user.emailOtp);
-            console.log('   Provided OTP:', otp);
-            console.log('   Static OTP:', process.env.STATIC_OTP);
-            
-            // Check if OTP matches (either stored OTP or static OTP)
-            const isOtpValid = user.emailOtp && (
-                user.emailOtp === otp || 
-                user.emailOtp === process.env.STATIC_OTP
-            );
-            
-            if (!isOtpValid) {
-                console.log('❌ OTP verification failed');
+            // Check if email OTP exists and is valid
+            if (!user.emailOtp || user.emailOtp !== otp) {
                 return res.status(400).json({
                     success: false,
                     message: 'Invalid OTP'
@@ -316,15 +305,12 @@ const login = async (req, res) => {
 
             // Check if OTP is expired
             if (user.emailOtpExpires && user.emailOtpExpires < new Date()) {
-                console.log('❌ OTP expired');
                 return res.status(400).json({
                     success: false,
                     message: 'OTP has expired. Please request a new one.'
                 });
             }
 
-            console.log('✅ OTP verified successfully');
-            
             // Clear OTP after successful verification
             user.emailOtp = undefined;
             user.emailOtpExpires = undefined;
@@ -343,82 +329,99 @@ const login = async (req, res) => {
             });
         }
 
-        // Check user role and send OTP accordingly
-        if (user.role === 'admin') {
-            // ADMIN: Use Static OTP (1006)
-            console.log('� Admin login detected - using static OTP');
-            console.log('🔑 Static OTP:', process.env.STATIC_OTP);
-            
-            // Store static OTP with 10-minute expiry
-            user.emailOtp = process.env.STATIC_OTP;
-            user.emailOtpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-            await user.save();
-            
-            return res.json({
-                success: true,
-                message: 'OTP sent to your registered mobile number. Please verify to complete login.',
-                requireOTP: true,
-                otpType: 'mobile',
-                data: {
-                    phoneNumber: user.phoneNumber,
-                    role: user.role,
-                    otpSent: true,
-                    useStatic: true,
-                    otp: process.env.STATIC_OTP // Show static OTP (1006)
-                }
-            });
-        }
-        
-        // USER: Generate dynamic OTP and send via email
+        // Generate 4-digit OTP
         const loginOtp = generateOTP();
         
         // Store OTP with 10-minute expiry
         user.emailOtp = loginOtp;
         user.emailOtpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
         await user.save();
-        
-        // Check if user has email configured
-        if (!user.email || user.email.trim() === '') {
-            // Clear OTP if no email
-            user.emailOtp = undefined;
-            user.emailOtpExpires = undefined;
-            await user.save();
-            
-            return res.status(400).json({
-                success: false,
-                message: 'No email configured for this account. Please contact support.'
-            });
-        }
 
-        console.log('📧 Sending login OTP to user email:', user.email);
-        try {
-            const emailResult = await sendOTPEmail(user.email, user.name || 'User', loginOtp, 'login');
-            console.log('✅ Login OTP email sent successfully to user');
+        // Check user role and send OTP accordingly
+        if (user.role === 'admin') {
+            // ADMIN: Send OTP via SMS
+            console.log('📱 Sending login OTP to admin mobile:', user.phoneNumber);
+            console.log('🔑 Admin Mobile OTP:', loginOtp);
             
-            return res.json({
-                success: true,
-                message: 'OTP sent to your registered email. Please verify to complete login.',
-                requireOTP: true,
-                otpType: 'email',
-                data: {
-                    phoneNumber: user.phoneNumber,
-                    email: user.email,
-                    role: user.role,
-                    otpSent: true
-                }
-            });
-        } catch (emailError) {
-            console.error('❌ Failed to send login OTP email to user:', emailError);
-            
-            // Clear OTP if email fails
-            user.emailOtp = undefined;
-            user.emailOtpExpires = undefined;
-            await user.save();
-            
-            return res.status(500).json({
-                success: false,
-                message: 'Failed to send OTP email. Please try again.'
-            });
+            try {
+                // Try to send SMS OTP
+                const smsResult = await sendSMSOTP(user.phoneNumber, loginOtp);
+                console.log('✅ Login OTP SMS sent successfully to admin');
+                
+                return res.json({
+                    success: true,
+                    message: 'OTP sent to your registered mobile number. Please verify to complete login.',
+                    requireOTP: true,
+                    otpType: 'mobile',
+                    data: {
+                        phoneNumber: user.phoneNumber,
+                        role: user.role,
+                        otpSent: true,
+                        // Send OTP in development mode for testing
+                        ...(process.env.NODE_ENV === 'development' && { otp: loginOtp })
+                    }
+                });
+            } catch (smsError) {
+                console.error('❌ Failed to send SMS OTP to admin:', smsError);
+                console.log('🔄 Using static OTP for admin:', process.env.STATIC_OTP);
+                
+                // Fallback to static OTP for admin
+                user.emailOtp = process.env.STATIC_OTP;
+                await user.save();
+                
+                return res.json({
+                    success: true,
+                    message: 'OTP sent to your registered mobile number. Please verify to complete login.',
+                    requireOTP: true,
+                    otpType: 'mobile',
+                    data: {
+                        phoneNumber: user.phoneNumber,
+                        role: user.role,
+                        otpSent: true,
+                        useStatic: true,
+                        otp: process.env.STATIC_OTP // Always show static OTP for admin
+                    }
+                });
+            }
+        } else {
+            // USER: Send OTP via Email
+            if (!user.email || user.email.trim() === '') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'No email configured for this account. Please contact support.'
+                });
+            }
+
+            console.log('📧 Sending login OTP to user email:', user.email);
+            try {
+                const emailResult = await sendOTPEmail(user.email, user.name || 'User', loginOtp, 'login');
+                console.log('✅ Login OTP email sent successfully to user');
+                
+                return res.json({
+                    success: true,
+                    message: 'OTP sent to your registered email. Please verify to complete login.',
+                    requireOTP: true,
+                    otpType: 'email',
+                    data: {
+                        phoneNumber: user.phoneNumber,
+                        email: user.email,
+                        role: user.role,
+                        otpSent: true
+                    }
+                });
+            } catch (emailError) {
+                console.error('❌ Failed to send login OTP email to user:', emailError);
+                
+                // Clear OTP if email fails
+                user.emailOtp = undefined;
+                user.emailOtpExpires = undefined;
+                await user.save();
+                
+                return res.status(500).json({
+                    success: false,
+                    message: 'Failed to send OTP email. Please try again.'
+                });
+            }
         }
 
     } catch (error) {
